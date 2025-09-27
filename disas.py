@@ -1,55 +1,128 @@
-# Save this as flood_dashboard.py and run with: streamlit run flood_dashboard.py
+# flood_advanced_dashboard.py
 
+# ----------------------
+# Imports
+# ----------------------
 import streamlit as st
 import pandas as pd
 import numpy as np
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
+import folium
+from streamlit_folium import st_folium
 
 # ----------------------
-# 1. Prepare Sample Data & Model
+# 1. Load & Preprocess Data
 # ----------------------
-data = pd.DataFrame({
-    'rainfall_mm': [10, 50, 120, 5, 200, 80, 0, 300],
-    'river_level_m': [1, 3, 5, 0.5, 6, 4, 0.2, 7],
-    'humidity_percent': [60, 80, 90, 50, 95, 85, 40, 98],
-    'flood_risk': ['Low', 'Medium', 'High', 'Low', 'High', 'Medium', 'Low', 'High']
-})
+st.title("🌊 Advanced Flood Forecasting & Alert System")
 
-X = data[['rainfall_mm', 'river_level_m', 'humidity_percent']]
-y = data['flood_risk']
+# Example: Load dataset (replace with real data)
+# Columns: ['date', 'rainfall_mm', 'river_level_m', 'humidity_percent', 'latitude', 'longitude']
+data = pd.read_csv("sample_flood_data.csv", parse_dates=['date'])
 
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+st.subheader("Sample Dataset")
+st.dataframe(data.head())
 
-model = RandomForestClassifier(n_estimators=100, random_state=42)
-model.fit(X_scaled, y)
+# Fill missing values
+data.fillna(method='ffill', inplace=True)
 
 # ----------------------
-# 2. Streamlit Dashboard
+# 2. Feature Engineering
 # ----------------------
-st.title("🌊 Flood Forecasting & Alert System")
-st.write("Enter current weather and river data to predict flood risk:")
+data['rainfall_intensity'] = data['rainfall_mm']  # Simplified example
+data['river_change'] = data['river_level_m'].diff().fillna(0)
+data['month'] = data['date'].dt.month
+data['week'] = data['date'].dt.isocalendar().week
 
-# User Inputs
-rainfall = st.number_input("Rainfall (mm)", min_value=0.0, value=50.0)
-river_level = st.number_input("River Level (m)", min_value=0.0, value=2.0)
-humidity = st.number_input("Humidity (%)", min_value=0.0, max_value=100.0, value=70.0)
+# ----------------------
+# 3. LSTM Time-Series Model (River Level Prediction)
+# ----------------------
+# Select features for LSTM
+lstm_features = ['rainfall_mm', 'humidity_percent', 'river_level_m']
+scaler = MinMaxScaler()
+scaled_data = scaler.fit_transform(data[lstm_features])
 
-# Prediction Button
-if st.button("Predict Flood Risk"):
-    X_input = np.array([[rainfall, river_level, humidity]])
-    X_input_scaled = scaler.transform(X_input)
-    risk = model.predict(X_input_scaled)[0]
-    
-    # Display Alert
-    if risk == 'High':
-        st.error(f"⚠️ HIGH flood risk detected! Take precautions immediately!")
-    elif risk == 'Medium':
-        st.warning(f"ℹ️ Medium flood risk. Stay alert and monitor updates.")
+# Convert to sequences
+def create_sequences(data, seq_length=7):
+    X, y = [], []
+    for i in range(len(data) - seq_length):
+        X.append(data[i:i+seq_length])
+        y.append(data[i+seq_length, 2])  # river_level_m is target
+    return np.array(X), np.array(y)
+
+seq_length = 7
+X_seq, y_seq = create_sequences(scaled_data, seq_length)
+
+# LSTM Model
+lstm_model = Sequential()
+lstm_model.add(LSTM(50, activation='relu', input_shape=(X_seq.shape[1], X_seq.shape[2])))
+lstm_model.add(Dense(1))
+lstm_model.compile(optimizer='adam', loss='mse')
+
+# Train model (example: very few epochs for demo)
+lstm_model.fit(X_seq, y_seq, epochs=5, batch_size=8, verbose=0)
+
+# Predict next day's river level
+last_seq = scaled_data[-seq_length:].reshape(1, seq_length, len(lstm_features))
+predicted_level_scaled = lstm_model.predict(last_seq)
+predicted_level = scaler.inverse_transform(
+    np.array([[0,0,predicted_level_scaled[0][0]]])  # only river_level_m
+)[0][2]
+
+st.subheader("Predicted River Level (Next Day)")
+st.metric(label="Predicted River Level (m)", value=round(predicted_level,2))
+
+# ----------------------
+# 4. Risk Classification
+# ----------------------
+# Example thresholds
+if predicted_level < 2:
+    risk_level = "Low"
+elif 2 <= predicted_level < 5:
+    risk_level = "Medium"
+else:
+    risk_level = "High"
+
+st.subheader("Flood Risk Level")
+if risk_level == "High":
+    st.error("⚠️ HIGH FLOOD RISK ALERT!")
+elif risk_level == "Medium":
+    st.warning("ℹ️ Medium flood risk. Stay alert.")
+else:
+    st.success("✅ Low flood risk. All clear.")
+
+# ----------------------
+# 5. Map Visualization
+# ----------------------
+st.subheader("Flood Risk Map")
+
+# Simple example: plot all locations from dataset
+m = folium.Map(location=[data['latitude'].mean(), data['longitude'].mean()], zoom_start=7)
+
+for _, row in data.iterrows():
+    if risk_level == "High":
+        color = 'red'
+    elif risk_level == "Medium":
+        color = 'orange'
     else:
-        st.success(f"✅ Low flood risk. All clear.")
+        color = 'green'
+    folium.CircleMarker(
+        location=[row['latitude'], row['longitude']],
+        radius=6,
+        color=color,
+        fill=True,
+        fill_opacity=0.7
+    ).add_to(m)
 
-# Optional: Display sample dataset
-st.subheader("Sample Dataset Used for Model")
-st.dataframe(data)
+st_folium(m, width=700)
+
+# ----------------------
+# 6. Optional: Alerts via SMS / Telegram (Pseudo-code)
+# ----------------------
+# def send_alert(risk_level):
+#     if risk_level == "High":
+#         # Twilio or Telegram API integration here
+#         pass
+
