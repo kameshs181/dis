@@ -18,7 +18,7 @@ from streamlit_folium import st_folium
 st.title("🌊 Advanced Flood Forecasting Dashboard (LSTM)")
 
 # Load sample CSV
-data = pd.read_csv("sample_flood_data.csv", parse_dates=['date'])
+data = pd.read_csv("sample_flood_rf_data.csv", parse_dates=['date'])
 
 st.subheader("Sample Flood Data")
 st.dataframe(data.head())
