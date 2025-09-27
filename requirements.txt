@@ -1,0 +1,23 @@
+# Streamlit for the dashboard
+streamlit
+
+# Data manipulation
+pandas
+numpy
+
+# Machine Learning
+scikit-learn
+xgboost        # Optional: for advanced ML models
+
+# Visualization
+matplotlib     # Optional: for static charts
+seaborn        # Optional: for EDA
+plotly         # Optional: for interactive charts
+
+# Maps
+folium
+streamlit-folium  # To embed Folium maps into Streamlit
+
+# Notifications (optional)
+twilio         # If you plan to send SMS alerts
+python-telegram-bot  # If you plan to send Telegram alerts
